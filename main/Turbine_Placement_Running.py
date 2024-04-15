@@ -7,25 +7,16 @@ from qgis.core import (
     QgsPointXY,
     QgsGeometry,
     QgsFeature,
+    QgsField, QgsFields, Qgis,
     QgsVectorLayer,
     QgsLayoutExporter
 )
+from shapely.geometry import Polygon
 from shapely.geometry import Point
 from shapely.affinity import scale, rotate
 import geopandas as gpd
 import pandas as pd
 from qgis.PyQt.QtCore import QSizeF
-def is_your_point_in_orange_layer(point: Point, orange_layer: QgsVectorLayer) -> bool:    """
-    Checks if the specified point intersects with the specified orange layer.
-
-    Args:
-        point (Point): The point to check.
-        orange_layer (QgsVectorLayer): The orange layer to check against.
-
-    Returns:
-        bool: True if the point intersects with the orange layer, otherwise False.
-    """
-    return orange_layer.intersects(point)
 orange_layer = QgsProject.instance().mapLayersByName('orange_layer')[0]
 def border(orange_layer: QgsVectorLayer) -> List[Tuple[float, float]]:
     """
@@ -151,3 +142,45 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
                 y += step(semi)  # Increment y even if the turbine is not contained to avoid infinite loop
         x += step(semi)  # Correctly increment x after the inner y loop is completed
     return packed_elipses
+def convert_gdf_to_qgsvectorlayer(gdf, layer_name="memory_layer", geom_type="Polygon"):
+    # Define the layer with its geometry type and CRS
+    crs = gdf.crs.to_wkt()
+    layer = QgsVectorLayer(f"{geom_type}?crs={crs}", layer_name, "memory")
+
+    # Get the fields from the GeoDataFrame
+    layer_data = layer.dataProvider()
+
+    # Prepare fields, excluding 'geometry' and handling dtype conversions
+    fields = QgsFields()
+    for name, dtype in zip(gdf.columns, gdf.dtypes):
+        if name != 'geometry':
+            if dtype.name.startswith('float'):
+                qtype = QVariant.Double
+            elif dtype.name.startswith('int'):
+                qtype = QVariant.Int
+            else:
+                qtype = QVariant.String
+            fields.append(QgsField(name, qtype))
+
+    layer_data.addAttributes(fields.toList())
+    layer.updateFields()
+
+    # Create and add features
+    for index, row in gdf.iterrows():
+        feature = QgsFeature(fields)
+        feature.setGeometry(QgsGeometry.fromWkt(row.geometry.to_wkt()))
+        # Ensure attributes are added without the 'geometry' column
+        attributes = [row[col] for col in gdf.columns if col != 'geometry']
+        feature.setAttributes(attributes)
+        layer_data.addFeature(feature)
+
+    # Update the layer's extent after adding features
+    layer.updateExtents()
+    return layer
+new_layer=generateNewLayer(orange_layer, (100,100), 23, border(orange_layer))
+vl = QgsVectorLayer(new_layer.to_json(),"mygeojson","ogr")
+if not vl.isValid():
+    print("Layer failed to load!")
+else:
+    QgsProject.instance().addMapLayer(vl)
+    print("Layer added successfully!")
