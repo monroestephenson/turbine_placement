@@ -14,30 +14,48 @@ from qgis.core import (
 from shapely.geometry import Polygon
 from shapely.geometry import Point
 from shapely.affinity import scale, rotate
+from shapely.geometry import LineString
 import geopandas as gpd
 import pandas as pd
 from qgis.PyQt.QtCore import QSizeF
 orange_layer = QgsProject.instance().mapLayersByName('orange_layer')[0]
-def border(orange_layer: QgsVectorLayer) -> List[Tuple[float, float]]:
+def interpolate_points(vertices, max_distance):
     """
-    Creates a list of tuples of the border points of the orange layer.
+    Interpolate points along a line defined by QgsPoint vertices if the distance between points is greater than max_distance.
+    """
+    interpolated_points = []
+    coords = [(vertex.x(), vertex.y()) for vertex in vertices]  # Extract coordinates from QgsPoint
+    line = LineString(coords)
+    num_segments = int(line.length // max_distance)
+    for i in range(num_segments + 1):
+        point = line.interpolate(i * max_distance)
+        interpolated_points.append((point.x, point.y))
+    return interpolated_points
+
+def border(orange_layer: QgsVectorLayer, max_distance: float) -> List[Tuple[float, float]]:
+    """
+    Creates a list of tuples of the border points of the orange layer, including interpolated points
+    on straight segments.
 
     Args:
         orange_layer (QgsVectorLayer): The layer whose borders are to be extracted.
+        max_distance (float): The maximum distance between points on the border.
 
     Returns:
-        List[Tuple[float, float]]: A list of coordinates representing the border of the layer.
+        List[Tuple[float, float]]: A list of coordinates representing the detailed border of the layer.
     """
-    for feature in orange_layer.getFeatures(): 
+    detailed_border = []
+    for feature in orange_layer.getFeatures():
         geom = feature.geometry()
         if geom.type() == QgsWkbTypes.PolygonGeometry:
             exterior = geom.constGet().boundary()
-        border =[]
-        for line in exterior:
-            vertices = [(vertex.x(), vertex.y()) for vertex in line.vertices()]
-            for point in vertices:
-                border.append(point)
-    return border
+            for line in exterior:
+                vertices = [vertex for vertex in line.vertices()]  # Extract vertices from the line
+                detailed_border.extend([(vertex.x(), vertex.y()) for vertex in vertices])  # Add vertices as tuples
+                # Interpolate additional points along straight line segments
+                interpolated_points = interpolate_points(vertices, max_distance)
+                detailed_border.extend(interpolated_points)
+    return detailed_border
 def ellipse(center: Tuple[float, float], semi: Tuple[float, float], angle: float) -> Polygon:
     """
     Generates an ellipse from a center point, semi-axis lengths, and rotation angle.
@@ -142,7 +160,7 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
                 y += step(semi)  # Increment y even if the turbine is not contained to avoid infinite loop
         x += step(semi)  # Correctly increment x after the inner y loop is completed
     return packed_elipses
-new_layer=generateNewLayer(orange_layer, (100,100), 23, border(orange_layer))
+new_layer=generateNewLayer(orange_layer, (100,100), 23, border(orange_layer,5))
 vl = QgsVectorLayer(new_layer.to_json(),"mygeojson","ogr")
 if not vl.isValid():
     print("Layer failed to load!")
