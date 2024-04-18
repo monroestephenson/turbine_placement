@@ -177,7 +177,7 @@ def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPS
         QgsVectorLayer: The new memory layer containing the polygons.
     """
     # Create a new memory layer for polygon features
-    layer = QgsVectorLayer(f"Polygon?crs={crs}", layer_name, "memory")
+    layer = QgsVectorLayer(f"Polygon?crs={8857}", layer_name, "memory")
     provider = layer.dataProvider()
     
     # Start editing the layer
