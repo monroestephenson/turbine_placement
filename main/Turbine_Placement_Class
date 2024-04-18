@@ -1,5 +1,8 @@
 from typing import List, Tuple
 import qgis
+import argparse
+from qgis.PyQt.QtWidgets import QInputDialog, QLineEdit
+import sys
 from qgis.core import (
     QgsProject,
     QgsPrintLayout,
@@ -18,10 +21,20 @@ from shapely.geometry import LineString, MultiPoint
 import geopandas as gpd
 import pandas as pd
 from qgis.PyQt.QtCore import QSizeF
+
 input_layer = QgsProject.instance().mapLayersByName('orange_layer')[0]
-def interpolate_points(vertices, max_distance):
+def interpolated_points(input_layer: QgsVectorLayer, max_distance: float) -> List[Tuple[float, float]]:
     """
-    Interpolate points along a line defined by QgsPoint vertices if the distance between points is greater than max_distance.
+    Interpolates points along the lines defined by the vertices of geometries in a QgsVectorLayer,
+    ensuring no segment between consecutive points exceeds the specified max_distance.
+
+    Parameters:
+        input_layer (QgsVectorLayer): The layer containing line geometries to be processed.
+        max_distance (float): The maximum allowed distance between consecutive points.
+
+    Returns:
+        List[Tuple[float, float]]: A list of tuples, where each tuple represents the coordinates (x, y)
+                                   of interpolated points along the lines of the input_layer.
     """
     interpolated_points = []
     coords = [(vertex.x(), vertex.y()) for vertex in vertices]  # Extract coordinates from QgsPoint
@@ -123,17 +136,6 @@ def generateNewLayer(input_layer: QgsVectorLayer, semi: Tuple[float, float], ang
     #newlayer.to_file('path/to/newlayer.shp')
     
     return new_combined_layer
-def step(semi):
-    """
-    Calculates the step size for iterating over area based on the smaller semi-axis.
-
-    Args:
-        semi (Tuple[float, float]): Semi-axis lengths.
-
-    Returns:
-        float: The smaller value of the semi-axis lengths.
-    """
-    return min(semi[0],semi[1])
 def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle: float) -> List[Polygon]:
     """
     Attempts to place turbines on a new layer as ellipses, ensuring they are packed without overlapping
@@ -163,7 +165,6 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
                 y += 2  # Increment y even if the turbine is not contained to avoid infinite loop
         x += step(semi)  # Correctly increment x after the inner y loop is completed
     return packed_elipses
-
 def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPSG:4326"):
     """
     Creates a new QgsVectorLayer from a list of Shapely Polygon objects.
@@ -197,23 +198,37 @@ def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPS
     layer.updateExtents()
     
     return layer
+def get_user_input():
+    # Using a File dialog to get the layer path
+    layer_path, _ = QInputDialog.getText(None, "Input Layer", "Enter the path to the input layer file:", QLineEdit.Normal, "")
+    #input_layer = QgsVectorLayer(layer_path, "input_layer", "ogr")
+    input_layer = QgsProject.instance().mapLayersByName(layer_path)[0]
+    if not input_layer.isValid():
+        print("Error: The provided layer is not valid.")
+        return None
 
-# Example usage:
-# Replace your_list_of_shapely_polygons with the actual list of polygons you have
-# Your list of polygons
-#for polygon in new_layer:
-#    print(polygon.wkt)
-# Add the layer to the QGIS interface
-new_layer=generateNewLayer(input_layer, (200,250), 23, border(input_layer,5))
-QgsProject.instance().addMapLayer(qgs_layer)
+    # Getting ellipse width and height
+    ellipse_width, _ = QInputDialog.getDouble(None, "Ellipse Width", "Enter the width of the ellipse (e.g., 200):", decimals=2)
+    ellipse_height, _ = QInputDialog.getDouble(None, "Ellipse Height", "Enter the height of the ellipse (e.g., 250):", decimals=2)
 
-vl = QgsVectorLayer(new_layer.to_json(),"mygeojson","ogr")
-if not vl.isValid():
-    print("Layer failed to load!")
-else:
-    QgsProject.instance().addMapLayer(vl)
-    print("Layer added successfully!")
-turbine_placement=place_turbines(generateNewLayer(input_layer, (200,250), 23, border(input_layer,5)),(200,250),23)
-qgs_layer = create_layer_from_shapely_polygons(turbine_placement)
-QgsProject.instance().addMapLayer(qgs_layer)
-print(turbine_placement)
+    # Getting the angle of the ellipse
+    ellipse_angle, _ = QInputDialog.getDouble(None, "Ellipse Angle", "Enter the angle of the ellipse in degrees (e.g., 23):", decimals=2)
+
+    # Getting max distance for interpolation
+    max_distance, _ = QInputDialog.getDouble(None, "Max Distance", "Enter the maximum distance allowed between interpolated points (e.g., 5):", decimals=2)
+
+    return input_layer, (ellipse_width, ellipse_height), ellipse_angle, max_distance
+def main():
+    inputs = get_user_input()
+    if inputs is None:
+        return
+    input_layer, ellipse_dimensions, ellipse_angle, max_distance = inputs
+    input_border=border(input_layer, max_distance)
+    # Assuming generateNewLayer and place_turbines functions are defined elsewhere
+    new_layer = generateNewLayer(input_layer, ellipse_dimensions, ellipse_angle,input_border)
+    turbine_placement = place_turbines(new_layer, ellipse_dimensions, ellipse_angle)
+    qgs_layer = create_layer_from_shapely_polygons(turbine_placement)
+    QgsProject.instance().addMapLayer(qgs_layer)
+    print("Turbine placement calculated. Details:", turbine_placement)
+
+main()
