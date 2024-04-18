@@ -164,7 +164,7 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
         x += step(semi)  # Correctly increment x after the inner y loop is completed
     return packed_elipses
 
-def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPSG:4326"):
+def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPSG:8857"):
     """
     Creates a new QgsVectorLayer from a list of Shapely Polygon objects.
 
