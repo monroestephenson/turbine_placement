@@ -31,7 +31,6 @@ def interpolate_points(vertices, max_distance):
         point = line.interpolate(i * max_distance)
         interpolated_points.append((point.x, point.y))
     return interpolated_points
-
 def border(orange_layer: QgsVectorLayer, max_distance: float) -> List[Tuple[float, float]]:
     """
     Creates a list of tuples of the border points of the orange layer, including interpolated points
@@ -110,16 +109,20 @@ def generateNewLayer(orange_layer: QgsVectorLayer, semi: Tuple[float, float], an
         ellipses.append(elb)
     
     # Create a GeoSeries from the ellipses with the correct CRS, then convert to GeoDataFrame
-    ellipses_series = gpd.GeoSeries(ellipses, crs='EPSG:4326')
+    ellipses_series = gpd.GeoSeries(ellipses, crs='EPSG:8857')
     all_ellipses = gpd.GeoDataFrame(geometry=ellipses_series)
-    
+    all_ellipses_union = all_ellipses.unary_union
+    newlayer_union = newlayer.unary_union
     # Concatenate the new ellipses GeoDataFrame with the original layer using GeoPandas
-    newlayer = gpd.GeoDataFrame(pd.concat([all_ellipses, newlayer], ignore_index=True), crs='EPSG:4326')
+    #newlayer = gpd.GeoDataFrame(pd.concat([all_ellipses, newlayer], ignore_index=True), crs='EPSG:8857')
+    combined_geometries = gpd.GeoSeries([all_ellipses_union, newlayer_union])
+    combined=combined_geometries.unary_union
+    new_combined_layer = gpd.GeoDataFrame(geometry=combined_geometries, crs='EPSG:8857')
 
     # Save the result
     #newlayer.to_file('path/to/newlayer.shp')
     
-    return newlayer
+    return new_combined_layer
 def step(semi):
     """
     Calculates the step size for iterating over area based on the smaller semi-axis.
@@ -152,18 +155,65 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
         while y < maxy:
             potential_turbine = ellipse((x, y), semi, angle)
             # Adjusted to use .any() for Series boolean context evaluation
-            if newlayer.contains(potential_turbine).all():  # Check if any part of newlayer contains the turbine
+            if newlayer.contains(potential_turbine).any():  # Check if any part of newlayer contains the turbine
                 if all(not potential_turbine.intersects(packed) for packed in packed_elipses):
                     packed_elipses.append(potential_turbine)
-                y += step(semi)  # Ensure y is incremented as intended
+                y += 2  # Ensure y is incremented as intended
             else:
-                y += step(semi)  # Increment y even if the turbine is not contained to avoid infinite loop
+                y += 2  # Increment y even if the turbine is not contained to avoid infinite loop
         x += step(semi)  # Correctly increment x after the inner y loop is completed
     return packed_elipses
-new_layer=generateNewLayer(orange_layer, (100,100), 23, border(orange_layer,5))
+new_layer=generateNewLayer(orange_layer, (100,150), 23, border(orange_layer,5))
+
+def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPSG:4326"):
+    """
+    Creates a new QgsVectorLayer from a list of Shapely Polygon objects.
+
+    Args:
+        polygons (list): List of Shapely Polygon objects.
+        layer_name (str): Name of the new memory layer.
+        crs (str): Coordinate reference system for the new layer.
+
+    Returns:
+        QgsVectorLayer: The new memory layer containing the polygons.
+    """
+    # Create a new memory layer for polygon features
+    layer = QgsVectorLayer(f"Polygon?crs={crs}", layer_name, "memory")
+    provider = layer.dataProvider()
+    
+    # Start editing the layer
+    layer.startEditing()
+
+    # Create a feature for each Shapely Polygon object
+    for shapely_polygon in polygons:
+        # Create a new feature
+        feature = QgsFeature()
+        # Set the geometry of the feature to the Shapely Polygon
+        feature.setGeometry(QgsGeometry.fromWkt(shapely_polygon.wkt))
+        # Add the feature to the provider
+        provider.addFeature(feature)
+    
+    # Commit changes and update the layer's extent
+    layer.commitChanges()
+    layer.updateExtents()
+    
+    return layer
+
+# Example usage:
+# Replace your_list_of_shapely_polygons with the actual list of polygons you have
+# Your list of polygons
+#for polygon in new_layer:
+#    print(polygon.wkt)
+# Add the layer to the QGIS interface
+QgsProject.instance().addMapLayer(qgs_layer)
+
 vl = QgsVectorLayer(new_layer.to_json(),"mygeojson","ogr")
 if not vl.isValid():
     print("Layer failed to load!")
 else:
     QgsProject.instance().addMapLayer(vl)
     print("Layer added successfully!")
+turbine_placement=place_turbines(generateNewLayer(orange_layer, (100,150), 23, border(orange_layer,5)),(100,150),23)
+qgs_layer = create_layer_from_shapely_polygons(turbine_placement)
+QgsProject.instance().addMapLayer(qgs_layer)
+print(turbine_placement)
