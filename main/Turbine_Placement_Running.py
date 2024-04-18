@@ -14,7 +14,7 @@ from qgis.core import (
 from shapely.geometry import Polygon
 from shapely.geometry import Point
 from shapely.affinity import scale, rotate
-from shapely.geometry import LineString
+from shapely.geometry import LineString, MultiPoint
 import geopandas as gpd
 import pandas as pd
 from qgis.PyQt.QtCore import QSizeF
@@ -155,7 +155,7 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
         while y < maxy:
             potential_turbine = ellipse((x, y), semi, angle)
             # Adjusted to use .any() for Series boolean context evaluation
-            if newlayer.contains(potential_turbine).any():  # Check if any part of newlayer contains the turbine
+            if newlayer.contains(potential_turbine).any() and layer_to_gdf(orange_layer).contains(potential_turbine.centroid).any():  # Check if any part of newlayer contains the turbine
                 if all(not potential_turbine.intersects(packed) for packed in packed_elipses):
                     packed_elipses.append(potential_turbine)
                 y += 2  # Ensure y is incremented as intended
@@ -163,7 +163,6 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
                 y += 2  # Increment y even if the turbine is not contained to avoid infinite loop
         x += step(semi)  # Correctly increment x after the inner y loop is completed
     return packed_elipses
-new_layer=generateNewLayer(orange_layer, (100,150), 23, border(orange_layer,5))
 
 def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPSG:4326"):
     """
@@ -205,6 +204,7 @@ def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPS
 #for polygon in new_layer:
 #    print(polygon.wkt)
 # Add the layer to the QGIS interface
+new_layer=generateNewLayer(orange_layer, (200,250), 23, border(orange_layer,5))
 QgsProject.instance().addMapLayer(qgs_layer)
 
 vl = QgsVectorLayer(new_layer.to_json(),"mygeojson","ogr")
@@ -213,7 +213,7 @@ if not vl.isValid():
 else:
     QgsProject.instance().addMapLayer(vl)
     print("Layer added successfully!")
-turbine_placement=place_turbines(generateNewLayer(orange_layer, (100,150), 23, border(orange_layer,5)),(100,150),23)
+turbine_placement=place_turbines(generateNewLayer(orange_layer, (200,250), 23, border(orange_layer,5)),(200,250),23)
 qgs_layer = create_layer_from_shapely_polygons(turbine_placement)
 QgsProject.instance().addMapLayer(qgs_layer)
 print(turbine_placement)
