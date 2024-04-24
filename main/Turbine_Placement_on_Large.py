@@ -159,7 +159,7 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
         x += step(semi)
     return packed_elipses
 
-def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPSG:4326"):
+def create_layer_from_shapely_polygons(polygons: List[Polygon], layer_name: str = "Polygons", crs: str = "EPSG:4326") -> QgsVectorLayer:
     """
     Creates a new QgsVectorLayer from a list of Shapely Polygon objects.
 
@@ -192,7 +192,38 @@ def create_layer_from_shapely_polygons(polygons, layer_name="Polygons", crs="EPS
     layer.updateExtents()
     
     return layer
-def get_user_input():
+def get_user_input() -> Tuple[QgsVectorLayer, Tuple[float, float], float, float]:
+    """
+    Prompts the user to input parameters required for generating an ellipse on a map layer.
+
+    This function utilizes a series of dialogs to retrieve the following from the user:
+    1. The path to the input layer file which is expected to be a named layer within the current QGIS project.
+    2. The width of the ellipse in the specified unit (e.g., meters).
+    3. The height of the ellipse in the specified unit.
+    4. The angle of rotation for the ellipse in degrees.
+    5. The maximum allowed distance between interpolated points on the ellipse.
+
+    The function checks if the input layer specified by the user is valid. If the layer is not valid,
+    an error message is printed and None is returned.
+
+    Returns:
+        tuple: A tuple containing:
+              - QgsVectorLayer: The vector layer specified by the user.
+              - tuple: A tuple with two floats representing the width and height of the ellipse.
+              - float: The angle of the ellipse in degrees.
+              - float: The maximum distance allowed between interpolated points.
+              If the layer is not valid, returns None.
+
+    Raises:
+        RuntimeError: If the user cancels the input dialog, causing the functions to return invalid values.
+
+    Note:
+        This function assumes it is used within a QGIS environment where QgsProject and QInputDialog are available.
+
+    Example:
+        >>> layer, dimensions, angle, max_dist = get_user_input()
+        >>> print(f"Layer: {layer.name()}, Ellipse Dimensions: {dimensions}, Angle: {angle}, Max Distance: {max_dist}")
+    """
     # Using a File dialog to get the layer path
     layer_path, _ = QInputDialog.getText(None, "Input Layer", "Enter the path to the input layer file:", QLineEdit.Normal, "")
     #input_layer = QgsVectorLayer(layer_path, "input_layer", "ogr")
