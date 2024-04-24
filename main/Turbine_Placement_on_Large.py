@@ -145,7 +145,7 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
     x = minx
     # Convert the input layer to a GeoDataFrame once before the loop
     input_gdf = layer_to_gdf(input_layer)
-    
+
     while x < maxx:
         y = miny
         while y < maxy:
@@ -159,7 +159,7 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
         x += step(semi)
     return packed_elipses
 
-def create_layer_from_shapely_polygons(polygons: List[Polygon], layer_name: str = "Polygons", crs: str = "EPSG:4326") -> QgsVectorLayer:
+def create_layer_from_shapely_polygons(polygons: List[Polygon], layer_name: str = "Polygons", crs: str = "EPSG:8857") -> QgsVectorLayer:
     """
     Creates a new QgsVectorLayer from a list of Shapely Polygon objects.
 
@@ -191,6 +191,40 @@ def create_layer_from_shapely_polygons(polygons: List[Polygon], layer_name: str 
     layer.commitChanges()
     layer.updateExtents()
     
+    return layer
+
+def create_layer_from_points(points: List[Point], layer_name: str = "Centroids", crs: str = "EPSG:8857") -> QgsVectorLayer:
+    """
+    Creates a new QgsVectorLayer from a list of Shapely Point objects representing centroids.
+
+    Args:
+        points (list): List of Shapely Point objects.
+        layer_name (str): Name of the new memory layer.
+        crs (str): Coordinate reference system for the new layer.
+
+    Returns:
+        QgsVectorLayer: The new memory layer containing the points.
+    """
+    # Correctly create a new memory layer for point features with specified CRS
+    layer = QgsVectorLayer(f"Point?crs={crs}", layer_name, "memory")
+    provider = layer.dataProvider()
+
+    # Start editing the layer
+    layer.startEditing()
+
+    # Create a feature for each Shapely Point object
+    for point in points:
+        # Create a new feature
+        feature = QgsFeature()
+        # Set the geometry of the feature to the Shapely Point
+        feature.setGeometry(QgsGeometry.fromWkt(point.wkt))
+        # Add the feature to the provider
+        provider.addFeature(feature)
+
+    # Commit changes and update the layer's extent
+    layer.commitChanges()
+    layer.updateExtents()
+
     return layer
 def get_user_input() -> Tuple[QgsVectorLayer, Tuple[float, float], float, float]:
     """
@@ -255,8 +289,14 @@ def main():
     new_layer = generateNewLayer(input_layer, ellipse_dimensions, ellipse_angle, input_border)
     turbine_placement = place_turbines(new_layer, ellipse_dimensions, ellipse_angle, input_layer)
     qgs_layer = create_layer_from_shapely_polygons(turbine_placement)
+    # Create centroids layer
+    centroids = [polygon.centroid for polygon in turbine_placement]
+    centroids_layer = create_layer_from_points(centroids, "Turbine Centroids", "EPSG:8857")
+    
     
     QgsProject.instance().addMapLayer(qgs_layer)
+    QgsProject.instance().addMapLayer(centroids_layer)
+
     print("Turbine placement calculated. Details:", turbine_placement)
 
 main()
