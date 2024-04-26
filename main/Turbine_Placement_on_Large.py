@@ -141,6 +141,7 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
     and contained within the layer's boundaries.
     """
     packed_elipses = []
+    centroids=[]
     minx, miny, maxx, maxy = newlayer.total_bounds
     x = minx
     # Convert the input layer to a GeoDataFrame once before the loop
@@ -153,11 +154,12 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
             if newlayer.contains(potential_turbine).any() and input_gdf.contains(potential_turbine.centroid).any():
                 if all(not potential_turbine.intersects(packed) for packed in packed_elipses):
                     packed_elipses.append(potential_turbine)
+                    centroids.append((x,y))
                 y += 10
             else:
                 y += 10
         x += 10
-    return packed_elipses
+    return packed_elipses, centroids
 
 def create_layer_from_shapely_polygons(polygons: List[Polygon], layer_name: str = "Polygons", crs: str = "EPSG:8857") -> QgsVectorLayer:
     """
@@ -193,31 +195,32 @@ def create_layer_from_shapely_polygons(polygons: List[Polygon], layer_name: str 
     
     return layer
 
-def create_layer_from_points(points: List[Point], layer_name: str = "Centroids", crs: str = "EPSG:8857") -> QgsVectorLayer:
+def create_layer_from_points(centroids: List[Tuple[float, float]], layer_name: str, crs: str = "EPSG:8857") -> QgsVectorLayer:
     """
-    Creates a new QgsVectorLayer from a list of Shapely Point objects representing centroids.
+    Creates a new QgsVectorLayer from a list of centroid tuples.
 
     Args:
-        points (list): List of Shapely Point objects.
+        centroids (list): List of tuples representing centroids.
         layer_name (str): Name of the new memory layer.
         crs (str): Coordinate reference system for the new layer.
 
     Returns:
-        QgsVectorLayer: The new memory layer containing the points.
+        QgsVectorLayer: The new memory layer containing the centroids.
     """
-    # Correctly create a new memory layer for point features with specified CRS
+    # Convert tuples to Shapely Point objects
+    points = [QgsGeometry.fromPointXY(QgsPointXY(*centroid)) for centroid in centroids]
     layer = QgsVectorLayer(f"Point?crs={crs}", layer_name, "memory")
     provider = layer.dataProvider()
 
     # Start editing the layer
     layer.startEditing()
 
-    # Create a feature for each Shapely Point object
+    # Create a feature for each Point object
     for point in points:
         # Create a new feature
         feature = QgsFeature()
-        # Set the geometry of the feature to the Shapely Point
-        feature.setGeometry(QgsGeometry.fromWkt(point.wkt))
+        # Set the geometry of the feature to the Point
+        feature.setGeometry(point)
         # Add the feature to the provider
         provider.addFeature(feature)
 
@@ -267,36 +270,51 @@ def get_user_input() -> Tuple[QgsVectorLayer, Tuple[float, float], float, float]
         return None
 
     # Getting ellipse width and height
-    ellipse_width, _ = QInputDialog.getDouble(None, "Ellipse Width", "Enter the width of the ellipse (e.g., 200):", decimals=2)
-    ellipse_height, _ = QInputDialog.getDouble(None, "Ellipse Height", "Enter the height of the ellipse (e.g., 250):", decimals=2)
+    #ellipse_width, _ = QInputDialog.getDouble(None, "Ellipse Width", "Enter the width of the ellipse (e.g., 200):", decimals=2)
+    #ellipse_height, _ = QInputDialog.getDouble(None, "Ellipse Height", "Enter the height of the ellipse (e.g., 250):", decimals=2)
+    rotor_width, _ = QInputDialog.getDouble(None, "Rotor Width", "Enter the rotor width (e.g., 50):", decimals=2)
 
     # Getting the angle of the ellipse
-    ellipse_angle, _ = QInputDialog.getDouble(None, "Ellipse Angle", "Enter the angle of the ellipse in degrees (e.g., 23):", decimals=2)
+    ellipse_angle, _ = QInputDialog.getDouble(None, "Ellipse Angle", "Enter the angle of the ellipse in degrees (e.g., 230):", decimals=2)
 
     # Getting max distance for interpolation
-    max_distance, _ = QInputDialog.getDouble(None, "Max Distance", "Enter the maximum distance allowed between interpolated points (e.g., 5):", decimals=2)
+    max_distance = 5#, _ = QInputDialog.getDouble(None, "Max Distance", "Enter the maximum distance allowed between interpolated points (e.g., 5):", decimals=2)
 
-    return input_layer, (ellipse_width, ellipse_height), ellipse_angle, max_distance
+    return input_layer, rotor_width, ellipse_angle, max_distance
 def main():
     inputs = get_user_input()
     if inputs is None:
         return
-    input_layer, ellipse_dimensions, ellipse_angle, max_distance = inputs
+    input_layer, rotor_width, ellipse_angle, max_distance = inputs
     if not input_layer.isValid():
         raise Exception("Layer is no longer valid")
     
+    ellipse_width = rotor_width/0.8
+    ellipse_height = rotor_width/(2/3)
+    ellipse_dimensions = (ellipse_width, ellipse_height)
+    
     input_border = border(input_layer, max_distance)
-    new_layer = generateNewLayer(input_layer, ellipse_dimensions, ellipse_angle, input_border)
-    turbine_placement = place_turbines(new_layer, ellipse_dimensions, ellipse_angle, input_layer)
-    qgs_layer = create_layer_from_shapely_polygons(turbine_placement)
-    # Create centroids layer
-    centroids = [polygon.centroid for polygon in turbine_placement]
+    new_layer = generateNewLayer(input_layer, ellipse_dimensions, 0, input_border)  # Assuming no rotation is needed for the ellipses
+
+    turbines, centroids = place_turbines(new_layer, ellipse_dimensions, 0, input_layer)  # No rotation
+    turbines_layer = create_layer_from_shapely_polygons(turbines, "Turbines")
+
+    # Creating layers for the rotor circles and larger rotor circles
+    rotor_circles = [Point(centroid).buffer(rotor_width / 2) for centroid in centroids]
+    larger_circles = [Point(centroid).buffer(rotor_width * 1.3 / 2) for centroid in centroids]
+    rotor_circles_layer = create_layer_from_shapely_polygons(rotor_circles, "Rotor Circles", "EPSG:8857")
+    larger_circles_layer = create_layer_from_shapely_polygons(larger_circles, "Extended Rotor Circles", "EPSG:8857")
+
     centroids_layer = create_layer_from_points(centroids, "Turbine Centroids", "EPSG:8857")
-    
-    
-    QgsProject.instance().addMapLayer(qgs_layer)
+
+
+    # Adding layers to the QGIS project
+    QgsProject.instance().addMapLayer(turbines_layer)
+    QgsProject.instance().addMapLayer(rotor_circles_layer)
+    QgsProject.instance().addMapLayer(larger_circles_layer)
     QgsProject.instance().addMapLayer(centroids_layer)
 
-    print("Turbine placement calculated. Details:", turbine_placement)
+
+    print("Turbine placement and rotor circles calculated.")
 
 main()
