@@ -23,7 +23,7 @@ import pandas as pd
 from qgis.PyQt.QtCore import QSizeF
 
 #input_layer = QgsProject.instance().mapLayersByName('orange_layer')[0]
-def interpolated_points(input_layer: QgsVectorLayer, max_distance: float) -> List[Tuple[float, float]]:
+def interpolated_points(vertices: QgsVectorLayer, max_distance: float) -> List[Tuple[float, float]]:
     """
     Interpolates points along the lines defined by the vertices of geometries in a QgsVectorLayer,
     ensuring no segment between consecutive points exceeds the specified max_distance.
@@ -65,8 +65,8 @@ def border(input_layer: QgsVectorLayer, max_distance: float) -> List[Tuple[float
                 vertices = [vertex for vertex in line.vertices()]  # Extract vertices from the line
                 detailed_border.extend([(vertex.x(), vertex.y()) for vertex in vertices])  # Add vertices as tuples
                 # Interpolate additional points along straight line segments
-                interpolated_points = interpolate_points(vertices, max_distance)
-                detailed_border.extend(interpolated_points)
+                interpolate_points = interpolated_points(vertices, max_distance)
+                detailed_border.extend(interpolate_points)
     return detailed_border
 def ellipse(center: Tuple[float, float], semi: Tuple[float, float], angle: float) -> Polygon:
     """
@@ -153,10 +153,10 @@ def place_turbines(newlayer: gpd.GeoDataFrame, semi: Tuple[float, float], angle:
             if newlayer.contains(potential_turbine).any() and input_gdf.contains(potential_turbine.centroid).any():
                 if all(not potential_turbine.intersects(packed) for packed in packed_elipses):
                     packed_elipses.append(potential_turbine)
-                y += 2
+                y += 10
             else:
-                y += 2
-        x += step(semi)
+                y += 10
+        x += 10
     return packed_elipses
 
 def create_layer_from_shapely_polygons(polygons: List[Polygon], layer_name: str = "Polygons", crs: str = "EPSG:8857") -> QgsVectorLayer:
